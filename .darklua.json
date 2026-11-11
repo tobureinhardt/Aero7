@@ -1,0 +1,16 @@
+{
+  "generator": "readable",
+  "bundle": {
+    "require_mode": {
+      "name": "path",
+      "sources": {
+        "core": "./src/core",
+        "window": "./src/window",
+        "components": "./src/components"
+      }
+    }
+  },
+  "rules": [
+    "remove_types"
+  ]
+}
