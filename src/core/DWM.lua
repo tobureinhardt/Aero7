@@ -3,9 +3,11 @@
 
 local Theme = require("core/Theme")
 local Utility = require("core/Utility")
+local BlurController = require("core/BlurController")
 
 local DWM = {
 	Windows = {},
+	BlurController = BlurController,
 	ActiveWindow = nil,
 	GlassChanged = Utility.CreateSignal(),
 	RestPositions = setmetatable({}, { __mode = "k" }),
@@ -658,6 +660,14 @@ function DWM.AnimateClose(windowFrame, uiScale, onComplete, glassLayers)
 			onComplete()
 		end
 	end)
+end
+
+function DWM:SetBlurIntensity(intensity)
+	BlurController.SetIntensity(intensity)
+end
+
+function DWM:SetBlurEnabled(enabled)
+	BlurController.SetEnabled(enabled)
 end
 
 return DWM

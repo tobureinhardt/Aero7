@@ -51,7 +51,48 @@ Vector2 = {
 		return setmetatable({ X = x or 0, Y = y or 0 }, {
 			__sub = function(a, b) return Vector2.new(a.X - b.X, a.Y - b.Y) end,
 			__add = function(a, b) return Vector2.new(a.X + b.X, a.Y + b.Y) end,
+			__mul = function(a, b)
+				if type(b) == "number" then return Vector2.new(a.X * b, a.Y * b) end
+				if type(a) == "number" then return Vector2.new(b.X * a, b.Y * a) end
+				return Vector2.new(a.X * b.X, a.Y * b.Y)
+			end,
 		})
+	end,
+}
+
+Vector3 = {
+	new = function(x, y, z)
+		return setmetatable({ X = x or 0, Y = y or 0, Z = z or 0 }, {
+			__add = function(a, b) return Vector3.new(a.X + b.X, a.Y + b.Y, a.Z + b.Z) end,
+			__sub = function(a, b) return Vector3.new(a.X - b.X, a.Y - b.Y, a.Z - b.Z) end,
+			__mul = function(a, b)
+				if type(b) == "number" then return Vector3.new(a.X * b, a.Y * b, a.Z * b) end
+				if type(a) == "number" then return Vector3.new(b.X * a, b.Y * a, b.Z * a) end
+				return Vector3.new(a.X * b.X, a.Y * b.Y, a.Z * b.Z)
+			end,
+			__div = function(a, b)
+				if type(b) == "number" then return Vector3.new(a.X / b, a.Y / b, a.Z / b) end
+				return Vector3.new(a.X / b.X, a.Y / b.Y, a.Z / b.Z)
+			end,
+		})
+	end,
+}
+
+CFrame = {
+	new = function(x, y, z)
+		local pos
+		if type(x) == "table" and (x.X ~= nil or x.Position ~= nil) then
+			pos = x.Position or x
+		else
+			pos = Vector3.new(x or 0, y or 0, z or 0)
+		end
+		return {
+			Position = pos,
+			LookVector = Vector3.new(0, 0, -1),
+			PointToObjectSpace = function(self, p)
+				return p - self.Position
+			end,
+		}
 	end,
 }
 
@@ -157,6 +198,10 @@ Enum = setmetatable({}, {
 		})
 	end,
 })
+Enum.RenderPriority = { Camera = { Value = 200 } }
+Enum.Material = { Glass = "Glass" }
+Enum.MeshType = { Sphere = "Sphere" }
+Enum.BulkMoveMode = { FireCFrameChanged = 0 }
 Enum.KeyCode = {
 	RightShift = { Name = "RightShift" },
 	RightControl = { Name = "RightControl" },
@@ -361,10 +406,58 @@ local services = {
 		LocalPlayer = Instance.new("Player"),
 	},
 	CoreGui = Instance.new("CoreGui"),
+	Lighting = Instance.new("Lighting"),
+	RunService = {
+		BindToRenderStep = function(_, name, priority, fn) end,
+		UnbindFromRenderStep = function(_, name) end,
+		RenderStepped = makeRBXSignal(),
+	},
 	Workspace = {
-		CurrentCamera = { ViewportSize = Vector2.new(1920, 1080) },
+		CurrentCamera = {
+			ViewportSize = Vector2.new(1920, 1080),
+			CFrame = CFrame.new(0, 0, 0),
+			NearPlaneZ = 0.1,
+			ViewportPointToRay = function(self, x, y, depth)
+				return { Origin = Vector3.new(0, 0, 0), Direction = Vector3.new(x / 1000, -y / 1000, -1) }
+			end,
+			ScreenPointToRay = function(self, x, y, depth)
+				return { Origin = Vector3.new(0, 0, 0), Direction = Vector3.new(x / 1000, -y / 1000, -1) }
+			end,
+		},
+		BulkMoveTo = function(self, parts, cframes, mode)
+			for i, p in ipairs(parts) do
+				if cframes[i] then p.CFrame = cframes[i] end
+			end
+		end,
 	},
 }
+if not table.create then
+	table.create = function(n, val)
+		local t = {}
+		for i = 1, n do
+			t[i] = val
+		end
+		return t
+	end
+end
+if not table.find then
+	table.find = function(t, val, init)
+		for i = init or 1, #t do
+			if t[i] == val then return i end
+		end
+		return nil
+	end
+end
+if not table.clear then
+	table.clear = function(t)
+		for k in pairs(t) do
+			t[k] = nil
+		end
+	end
+end
+
+workspace = services.Workspace
+Lighting = services.Lighting
 
 game = {
 	GetService = function(_, name)
@@ -381,8 +474,24 @@ local function check(cond, msg)
 	passCount = passCount + 1
 end
 
+local function getDistPath(filename)
+	local candidates = {
+		"/root/Aero7/dist/" .. filename,
+		"/storage/emulated/0/Aero7/dist/" .. filename,
+		"/root/Win7UI/dist/" .. filename,
+	}
+	for _, p in ipairs(candidates) do
+		local f = io.open(p, "rb")
+		if f then
+			f:close()
+			return p
+		end
+	end
+	return "/root/Aero7/dist/" .. filename
+end
+
 print("=== [1/6] Loading bundled dist/Win7UI.lua ===")
-local bundleChunk, loadErr = loadfile("/root/Win7UI/dist/Win7UI.lua")
+local bundleChunk, loadErr = loadfile(getDistPath("Win7UI.lua"))
 check(bundleChunk ~= nil, "Failed to compile dist/Win7UI.lua: " .. tostring(loadErr))
 
 _G.__WIN7UI_LOADER = bundleChunk
@@ -398,7 +507,7 @@ check(math.abs(btnNormalKps[2].Time - 0.495) < 0.01 and math.abs(btnNormalKps[3]
 check(#Win7UI.Theme.GlassPresets == 16, "Exactly 16 Windows 7 Personalization Glass Presets present")
 
 print("=== [3/6] Executing dist/Example.lua Showcase ===")
-local exampleChunk, exErr = loadfile("/root/Win7UI/dist/Example.lua")
+local exampleChunk, exErr = loadfile(getDistPath("Example.lua"))
 check(exampleChunk ~= nil, "Failed to compile dist/Example.lua: " .. tostring(exErr))
 local demo = exampleChunk()
 check(demo and demo.MainWindow and demo.PropertySheetWindow, "Both Explorer and Dialog windows created")
@@ -836,5 +945,45 @@ check(frameFromSwatch ~= nil, "ChooseColor dialog frame is visible")
 local okBtnFromSwatch = frameFromSwatch:FindFirstChild("ColorDialogOKButton", true)
 check(okBtnFromSwatch ~= nil, "ColorDialogOKButton found in dialog")
 okBtnFromSwatch.MouseButton1Click:Fire()
+
+print("=== [13/13] Testing Windows 7 Aero Glass BlurController (DepthOfField & Near-Plane Refraction) ===")
+-- 1. Verify BlurController module export
+check(type(Win7UI.BlurController) == "table", "Win7UI.BlurController exported")
+check(type(Win7UI.BlurController.new) == "function", "BlurController.new is a function")
+check(type(Win7UI.BlurController.updateAll) == "function", "BlurController.updateAll is a function")
+check(type(Win7UI.BlurController.SetIntensity) == "function", "BlurController.SetIntensity is a function")
+
+-- 2. Verify AeroWindow has BlurInstance attached
+check(mainWin.AeroWindow.BlurInstance ~= nil, "AeroWindow has BlurInstance attached")
+local blurInst = mainWin.AeroWindow.BlurInstance
+check(blurInst.Part ~= nil, "BlurInstance has Part created")
+check(blurInst.Part.Material == Enum.Material.Glass, "BlurPart Material is Enum.Material.Glass")
+check(math.abs(blurInst.Part.Transparency - (1 - 1e-7)) < 1e-5, "BlurPart Transparency is 1 - 1e-7")
+check(blurInst.Mesh ~= nil and blurInst.Mesh.ClassName == "BlockMesh", "BlurPart has BlockMesh for Rectangle shape")
+
+-- 3. Verify DepthOfFieldEffect created in Lighting
+local dof = services.Lighting:FindFirstChild("AeroGlassDepthOfField")
+check(dof ~= nil and dof.ClassName == "DepthOfFieldEffect", "DepthOfFieldEffect created in Lighting")
+check(dof.FarIntensity == 0, "DepthOfField FarIntensity is 0")
+check(dof.NearIntensity > 0, "DepthOfField NearIntensity is set")
+
+-- 4. Verify visibility toggling
+blurInst:SetVisible(false)
+check(blurInst.Part.Transparency == 1, "Setting BlurInstance visible=false sets part transparency to 1")
+blurInst:SetVisible(true)
+check(math.abs(blurInst.Part.Transparency - (1 - 1e-7)) < 1e-5, "Setting BlurInstance visible=true restores glass transparency")
+
+-- 5. Verify intensity adjustment
+Win7UI:SetBlurIntensity(0.55)
+check(Win7UI.BlurController.GetIntensity() == 0.55, "Win7UI:SetBlurIntensity updates intensity")
+check(dof.NearIntensity == 0.55, "DepthOfField NearIntensity updated to 0.55")
+
+-- 6. Verify standalone blur creation and destruction
+local testFrame = Instance.new("Frame")
+testFrame.Visible = true
+local standaloneBlur = Win7UI.BlurController.new(testFrame, "Oval")
+check(standaloneBlur.Mesh ~= nil and standaloneBlur.Mesh.ClassName == "SpecialMesh", "Oval blur creates SpecialMesh")
+standaloneBlur:Destroy()
+check(standaloneBlur.Part == nil, "Destroying blur object cleans up part")
 
 print(string.format("\n[SUCCESS] All %d verification assertions passed with 0 errors!", passCount))
