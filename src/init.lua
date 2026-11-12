@@ -6,7 +6,6 @@ local Assets = require("core/Assets")
 local Theme = require("core/Theme")
 local Utility = require("core/Utility")
 local DWM = require("core/DWM")
-local BlurController = require("core/BlurController")
 
 local AeroWindow = require("window/AeroWindow")
 local ExplorerLayout = require("window/ExplorerLayout")
@@ -50,7 +49,6 @@ local Win7UI = {
 	Utility = Utility,
 	DWM = DWM,
 	ColorDialog = ColorDialog,
-	BlurController = BlurController,
 }
 
 -- Automatically registers Flag for any control with a Flag property
@@ -541,14 +539,6 @@ end
 -- Sets global Aero Glass tint (preset name e.g. "Sky", "Ruby", "Leaf" or Color3)
 function Win7UI:SetGlassColor(colorOrPresetName, transparency, glowColor)
 	DWM:SetGlassColor(colorOrPresetName, transparency, glowColor)
-end
-
-function Win7UI:SetBlurIntensity(intensity)
-	BlurController.SetIntensity(intensity)
-end
-
-function Win7UI:SetBlurEnabled(enabled)
-	BlurController.SetEnabled(enabled)
 end
 
 -- Loads and activates Segoe UI custom TTF font on supported executors

@@ -4102,354 +4102,10 @@ do
     end
     do
         local function __modImpl()
-            local Lighting = game:GetService('Lighting')
-            local RunService = game:GetService('RunService')
-            local tableCreate = (table and table.create) or function(
-                count,
-                val
-            )
-                local t = {}
-
-                for i = 1, count do
-                    t[i] = val
-                end
-
-                return t
-            end
-            local BLUR_SIZE = Vector2.new(10, 10)
-            local PART_SIZE = 0.01
-            local PART_TRANSPARENCY = 1 - 1e-7
-            local START_INTENSITY = 0.25
-            local currentIntensity = START_INTENSITY
-            local BLUR_OBJ = nil
-
-            local function getOrCreateBlurEffect()
-                if not BLUR_OBJ or not BLUR_OBJ.Parent then
-                    local existing = Lighting:FindFirstChild('AeroGlassDepthOfField')
-
-                    if existing and existing:IsA('DepthOfFieldEffect') then
-                        BLUR_OBJ = existing
-                    else
-                        local ok, dof = pcall(function()
-                            local inst = Instance.new('DepthOfFieldEffect')
-
-                            inst.Name = 'AeroGlassDepthOfField'
-                            inst.FarIntensity = 0
-                            inst.NearIntensity = currentIntensity
-                            inst.FocusDistance = 0.25
-                            inst.InFocusRadius = 0
-                            inst.Parent = Lighting
-
-                            return inst
-                        end)
-
-                        if ok and dof then
-                            BLUR_OBJ = dof
-                        end
-                    end
-                end
-
-                return BLUR_OBJ
-            end
-
-            local PartsList = {}
-            local BlursList = {}
-            local BlurObjects = {}
-            local BlurredGui = {}
-
-            BlurredGui.__index = BlurredGui
-
-            local isRenderBound = false
-            local RENDER_STEP_NAME = 'Aero7_GlassBlurUpdate'
-
-            local function rayPlaneIntersect(
-                planePos,
-                planeNormal,
-                rayOrigin,
-                rayDirection
-            )
-                local n = planeNormal
-                local d = rayDirection
-                local v = rayOrigin - planePos
-                local nx = n.X or n.x or 0
-                local ny = n.Y or n.y or 0
-                local nz = n.Z or n.z or 0
-                local dx = d.X or d.x or 0
-                local dy = d.Y or d.y or 0
-                local dz = d.Z or d.z or 0
-                local vx = v.X or v.x or 0
-                local vy = v.Y or v.y or 0
-                local vz = v.Z or v.z or 0
-                local num = nx * vx + ny * vy + nz * vz
-                local den = nx * dx + ny * dy + nz * dz
-
-                if den == 0 then
-                    return rayOrigin, 0
-                end
-
-                local a = -num / den
-
-                return rayOrigin + a * rayDirection, a
-            end
-            local function rebuildPartsList()
-                PartsList = {}
-                BlursList = {}
-
-                for blurObj, part in pairs(BlurObjects)do
-                    table.insert(PartsList, part)
-                    table.insert(BlursList, blurObj)
-                end
-            end
-            local function updateGui(blurObj)
-                local frame = blurObj.Frame
-                local part = blurObj.Part
-                local mesh = blurObj.Mesh
-
-                if not part or not mesh then
-                    return
-                end
-                if not blurObj.Visible or not frame or not frame.Visible then
-                    part.Transparency = 1
-
-                    return
-                end
-
-                local camera = workspace.CurrentCamera
-
-                if not camera then
-                    part.Transparency = 1
-
-                    return
-                end
-
-                part.Transparency = PART_TRANSPARENCY
-
-                local blurSize = blurObj.BlurSize or BLUR_SIZE
-                local corner0 = frame.AbsolutePosition + blurSize
-                local corner1 = corner0 + frame.AbsoluteSize - blurSize * 2
-                local ray0, ray1
-
-                if blurObj.IgnoreGuiInset then
-                    ray0 = camera:ViewportPointToRay(corner0.X, corner0.Y, 1)
-                    ray1 = camera:ViewportPointToRay(corner1.X, corner1.Y, 1)
-                else
-                    ray0 = camera:ScreenPointToRay(corner0.X, corner0.Y, 1)
-                    ray1 = camera:ScreenPointToRay(corner1.X, corner1.Y, 1)
-                end
-                if not ray0 or not ray1 then
-                    return
-                end
-
-                local nearZ = camera.NearPlaneZ or 0.1
-                local planeOrigin = camera.CFrame.Position + camera.CFrame.LookVector * (0.05 - nearZ)
-                local planeNormal = camera.CFrame.LookVector
-                local pos0 = rayPlaneIntersect(planeOrigin, planeNormal, ray0.Origin, ray0.Direction)
-                local pos1 = rayPlaneIntersect(planeOrigin, planeNormal, ray1.Origin, ray1.Direction)
-
-                pos0 = camera.CFrame:PointToObjectSpace(pos0)
-                pos1 = camera.CFrame:PointToObjectSpace(pos1)
-
-                local size = pos1 - pos0
-                local center = (pos0 + pos1) / 2
-
-                mesh.Offset = center
-                mesh.Scale = size / PART_SIZE
-            end
-
-            function BlurredGui.updateAll()
-                if #BlursList == 0 then
-                    return
-                end
-
-                local camera = workspace.CurrentCamera
-
-                if not camera then
-                    return
-                end
-
-                local effect = getOrCreateBlurEffect()
-
-                if effect then
-                    effect.Enabled = true
-                    effect.NearIntensity = currentIntensity
-
-                    local nearZ = camera.NearPlaneZ or 0.1
-
-                    effect.FocusDistance = 0.25 - nearZ
-                end
-
-                for i = 1, #BlursList do
-                    updateGui(BlursList[i])
-                end
-
-                local cframes = tableCreate(#BlursList, camera.CFrame)
-
-                if workspace.BulkMoveTo then
-                    workspace:BulkMoveTo(PartsList, cframes, Enum.BulkMoveMode.FireCFrameChanged)
-                else
-                    for _, p in ipairs(PartsList)do
-                        p.CFrame = camera.CFrame
-                    end
-                end
-            end
-
-            local function ensureRenderBinding()
-                if not isRenderBound and RunService.BindToRenderStep then
-                    isRenderBound = true
-
-                    pcall(function()
-                        RunService:BindToRenderStep(RENDER_STEP_NAME, Enum.RenderPriority.Camera.Value + 1, function(
-                        )
-                            BlurredGui.updateAll()
-                        end)
-                    end)
-                end
-            end
-            local function cleanupRenderBinding()
-                if isRenderBound and #BlursList == 0 and RunService.UnbindFromRenderStep then
-                    isRenderBound = false
-
-                    pcall(function()
-                        RunService:UnbindFromRenderStep(RENDER_STEP_NAME)
-                    end)
-                end
-            end
-
-            function BlurredGui.new(frame, shape, options)
-                shape = shape or 'Rectangle'
-                options = options or {}
-
-                local camera = workspace.CurrentCamera
-                local blurPart = Instance.new('Part')
-
-                blurPart.Name = 'AeroGlassBlurPart'
-                blurPart.Size = Vector3.new(1, 1, 1) * PART_SIZE
-                blurPart.Anchored = true
-                blurPart.CanCollide = false
-                blurPart.CanTouch = false
-                blurPart.Material = Enum.Material.Glass
-                blurPart.Transparency = PART_TRANSPARENCY
-                blurPart.Parent = camera or workspace
-
-                local mesh
-
-                if shape == 'Rectangle' then
-                    mesh = Instance.new('BlockMesh')
-                    mesh.Parent = blurPart
-                elseif shape == 'Oval' then
-                    mesh = Instance.new('SpecialMesh')
-                    mesh.MeshType = Enum.MeshType.Sphere
-                    mesh.Parent = blurPart
-                end
-
-                local ignoreInset = false
-                local currentObj = frame
-
-                while currentObj do
-                    if currentObj:IsA('ScreenGui') then
-                        ignoreInset = currentObj.IgnoreGuiInset
-
-                        break
-                    end
-
-                    currentObj = currentObj.Parent
-                end
-
-                local new = setmetatable({
-                    Frame = frame,
-                    Part = blurPart,
-                    Mesh = mesh,
-                    IgnoreGuiInset = ignoreInset,
-                    BlurSize = options.BlurSize or BLUR_SIZE,
-                    Visible = true,
-                }, BlurredGui)
-
-                BlurObjects[new] = blurPart
-
-                rebuildPartsList()
-                getOrCreateBlurEffect()
-                ensureRenderBinding()
-                BlurredGui.updateAll()
-
-                return new
-            end
-            function BlurredGui:SetVisible(visible)
-                self.Visible = (visible ~= false)
-
-                if self.Part then
-                    if self.Visible and self.Frame and self.Frame.Visible then
-                        self.Part.Transparency = PART_TRANSPARENCY
-                    else
-                        self.Part.Transparency = 1
-                    end
-                end
-            end
-            function BlurredGui:Destroy()
-                if self.Part then
-                    self.Part:Destroy()
-
-                    self.Part = nil
-                end
-
-                BlurObjects[self] = nil
-
-                rebuildPartsList()
-
-                if #BlursList == 0 then
-                    if BLUR_OBJ then
-                        BLUR_OBJ.Enabled = false
-                    end
-
-                    cleanupRenderBinding()
-                end
-            end
-            function BlurredGui.SetIntensity(intensity)
-                currentIntensity = tonumber(intensity) or START_INTENSITY
-
-                if BLUR_OBJ then
-                    BLUR_OBJ.NearIntensity = currentIntensity
-                end
-            end
-            function BlurredGui.GetIntensity()
-                return currentIntensity
-            end
-            function BlurredGui.SetEnabled(enabled)
-                local isEnabled = (enabled ~= false)
-
-                if BLUR_OBJ then
-                    BLUR_OBJ.Enabled = isEnabled
-                end
-                if not isEnabled then
-                    for _, part in ipairs(PartsList)do
-                        part.Transparency = 1
-                    end
-                end
-            end
-
-            return BlurredGui
-        end
-
-        function __DARKLUA_BUNDLE_MODULES.d()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.d
-
-            if not v then
-                v = {
-                    c = __modImpl(),
-                }
-                __DARKLUA_BUNDLE_MODULES.cache.d = v
-            end
-
-            return v.c
-        end
-    end
-    do
-        local function __modImpl()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local BlurController = __DARKLUA_BUNDLE_MODULES.d()
             local DWM = {
                 Windows = {},
-                BlurController = BlurController,
                 ActiveWindow = nil,
                 GlassChanged = Utility.CreateSignal(),
                 RestPositions = setmetatable({}, {
@@ -5178,24 +4834,18 @@ do
                     end
                 end)
             end
-            function DWM:SetBlurIntensity(intensity)
-                BlurController.SetIntensity(intensity)
-            end
-            function DWM:SetBlurEnabled(enabled)
-                BlurController.SetEnabled(enabled)
-            end
 
             return DWM
         end
 
-        function __DARKLUA_BUNDLE_MODULES.e()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.e
+        function __DARKLUA_BUNDLE_MODULES.d()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.d
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.e = v
+                __DARKLUA_BUNDLE_MODULES.cache.d = v
             end
 
             return v.c
@@ -5208,8 +4858,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local DWM = __DARKLUA_BUNDLE_MODULES.e()
-            local BlurController = __DARKLUA_BUNDLE_MODULES.d()
+            local DWM = __DARKLUA_BUNDLE_MODULES.d()
             local AeroWindow = {}
 
             AeroWindow.__index = AeroWindow
@@ -5380,26 +5029,6 @@ do
                 self.InnerStroke = innerStroke
                 self.InnerBevel = innerBevel
                 self.GlassLayers = DWM.BuildAeroGlassLayers(windowFrame)
-                self.BlurEnabled = (options.Blur ~= false)
-                self.BlurIntensity = options.BlurIntensity or 0.25
-                self.BlurSize = options.BlurSize
-
-                if self.BlurEnabled then
-                    local ok, blurInstance = pcall(function()
-                        return BlurController.new(windowFrame, options.BlurShape or 'Rectangle', {
-                            BlurSize = self.BlurSize,
-                            Intensity = self.BlurIntensity,
-                        })
-                    end)
-
-                    if ok and blurInstance then
-                        self.BlurInstance = blurInstance
-
-                        if not self.IsVisible then
-                            blurInstance:SetVisible(false)
-                        end
-                    end
-                end
 
                 local titleBar = Utility.Create('Frame', {
                     Name = 'TitleBar',
@@ -6277,9 +5906,6 @@ do
 
                 self.IsMinimized = true
 
-                if self.BlurInstance then
-                    self.BlurInstance:SetVisible(false)
-                end
                 if not self.IsMaximized then
                     self.SavedBounds = {
                         Position = self.WindowFrame.Position,
@@ -6314,11 +5940,6 @@ do
                 end
 
                 self.IsMinimized = false
-
-                if self.BlurInstance then
-                    self.BlurInstance:SetVisible(true)
-                end
-
                 self.MinimizedStub.Visible = false
 
                 DWM.NextAnimToken(self.WindowFrame)
@@ -6401,9 +6022,6 @@ do
 
                 self.IsVisible = nextState
 
-                if self.BlurInstance then
-                    self.BlurInstance:SetVisible(nextState)
-                end
                 if nextState then
                     if self.IsMinimized then
                         self:Restore()
@@ -6430,11 +6048,6 @@ do
             end
             function AeroWindow:Close()
                 self.IsVisible = false
-
-                if self.BlurInstance then
-                    self.BlurInstance:SetVisible(false)
-                end
-
                 self.MinimizedStub.Visible = false
 
                 DWM.AnimateClose(self.WindowFrame, self.WindowScale, function()
@@ -6442,11 +6055,6 @@ do
                 end, self.GlassLayers)
             end
             function AeroWindow:Destroy()
-                if self.BlurInstance then
-                    self.BlurInstance:Destroy()
-
-                    self.BlurInstance = nil
-                end
                 if self._KeybindConn then
                     self._KeybindConn:Disconnect()
 
@@ -6463,14 +6071,14 @@ do
             return AeroWindow
         end
 
-        function __DARKLUA_BUNDLE_MODULES.f()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.f
+        function __DARKLUA_BUNDLE_MODULES.e()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.e
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.f = v
+                __DARKLUA_BUNDLE_MODULES.cache.e = v
             end
 
             return v.c
@@ -6665,14 +6273,14 @@ do
             return Scrollbar
         end
 
-        function __DARKLUA_BUNDLE_MODULES.g()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.g
+        function __DARKLUA_BUNDLE_MODULES.f()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.f
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.g = v
+                __DARKLUA_BUNDLE_MODULES.cache.f = v
             end
 
             return v.c
@@ -7169,14 +6777,14 @@ do
             return MenuBar
         end
 
-        function __DARKLUA_BUNDLE_MODULES.h()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.h
+        function __DARKLUA_BUNDLE_MODULES.g()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.g
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.h = v
+                __DARKLUA_BUNDLE_MODULES.cache.g = v
             end
 
             return v.c
@@ -7187,8 +6795,8 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Scrollbar = __DARKLUA_BUNDLE_MODULES.g()
-            local MenuBar = __DARKLUA_BUNDLE_MODULES.h()
+            local Scrollbar = __DARKLUA_BUNDLE_MODULES.f()
+            local MenuBar = __DARKLUA_BUNDLE_MODULES.g()
             local ExplorerLayout = {}
 
             ExplorerLayout.__index = ExplorerLayout
@@ -9026,14 +8634,14 @@ do
             return ExplorerLayout
         end
 
-        function __DARKLUA_BUNDLE_MODULES.i()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.i
+        function __DARKLUA_BUNDLE_MODULES.h()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.h
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.i = v
+                __DARKLUA_BUNDLE_MODULES.cache.h = v
             end
 
             return v.c
@@ -9044,8 +8652,8 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Scrollbar = __DARKLUA_BUNDLE_MODULES.g()
-            local MenuBar = __DARKLUA_BUNDLE_MODULES.h()
+            local Scrollbar = __DARKLUA_BUNDLE_MODULES.f()
+            local MenuBar = __DARKLUA_BUNDLE_MODULES.g()
             local DialogLayout = {}
 
             DialogLayout.__index = DialogLayout
@@ -9423,14 +9031,14 @@ do
             return DialogLayout
         end
 
-        function __DARKLUA_BUNDLE_MODULES.j()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.j
+        function __DARKLUA_BUNDLE_MODULES.i()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.i
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.j = v
+                __DARKLUA_BUNDLE_MODULES.cache.i = v
             end
 
             return v.c
@@ -9441,7 +9049,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local DWM = __DARKLUA_BUNDLE_MODULES.e()
+            local DWM = __DARKLUA_BUNDLE_MODULES.d()
             local SubDialog = {}
 
             function SubDialog.Show(parentWindow, options)
@@ -9731,14 +9339,14 @@ do
             return SubDialog
         end
 
-        function __DARKLUA_BUNDLE_MODULES.k()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.k
+        function __DARKLUA_BUNDLE_MODULES.j()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.j
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.k = v
+                __DARKLUA_BUNDLE_MODULES.cache.j = v
             end
 
             return v.c
@@ -9749,7 +9357,7 @@ do
             local UserInputService = game:GetService('UserInputService')
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local DWM = __DARKLUA_BUNDLE_MODULES.e()
+            local DWM = __DARKLUA_BUNDLE_MODULES.d()
             local ColorDialog = {}
 
             ColorDialog.BasicColors = {
@@ -10758,14 +10366,14 @@ do
             return ColorDialog
         end
 
-        function __DARKLUA_BUNDLE_MODULES.l()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.l
+        function __DARKLUA_BUNDLE_MODULES.k()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.k
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.l = v
+                __DARKLUA_BUNDLE_MODULES.cache.k = v
             end
 
             return v.c
@@ -10910,14 +10518,14 @@ do
             return GroupBox
         end
 
-        function __DARKLUA_BUNDLE_MODULES.m()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.m
+        function __DARKLUA_BUNDLE_MODULES.l()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.l
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.m = v
+                __DARKLUA_BUNDLE_MODULES.cache.l = v
             end
 
             return v.c
@@ -11042,14 +10650,14 @@ do
             return Tooltip
         end
 
-        function __DARKLUA_BUNDLE_MODULES.n()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.n
+        function __DARKLUA_BUNDLE_MODULES.m()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.m
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.n = v
+                __DARKLUA_BUNDLE_MODULES.cache.m = v
             end
 
             return v.c
@@ -11060,8 +10668,8 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
-            local MenuBar = __DARKLUA_BUNDLE_MODULES.h()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
+            local MenuBar = __DARKLUA_BUNDLE_MODULES.g()
             local Button = {}
 
             function Button.new(parentContainer, options)
@@ -11487,14 +11095,14 @@ do
             return Button
         end
 
-        function __DARKLUA_BUNDLE_MODULES.o()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.o
+        function __DARKLUA_BUNDLE_MODULES.n()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.n
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.o = v
+                __DARKLUA_BUNDLE_MODULES.cache.n = v
             end
 
             return v.c
@@ -11505,7 +11113,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local CommandLink = {}
 
             function CommandLink.new(parentContainer, options)
@@ -11632,14 +11240,14 @@ do
             return CommandLink
         end
 
-        function __DARKLUA_BUNDLE_MODULES.p()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.p
+        function __DARKLUA_BUNDLE_MODULES.o()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.o
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.p = v
+                __DARKLUA_BUNDLE_MODULES.cache.o = v
             end
 
             return v.c
@@ -11650,7 +11258,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local Checkbox = {}
 
             function Checkbox.new(parentContainer, options)
@@ -11883,14 +11491,14 @@ do
             return Checkbox
         end
 
-        function __DARKLUA_BUNDLE_MODULES.q()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.q
+        function __DARKLUA_BUNDLE_MODULES.p()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.p
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.q = v
+                __DARKLUA_BUNDLE_MODULES.cache.p = v
             end
 
             return v.c
@@ -11900,7 +11508,7 @@ do
         local function __modImpl()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local RadioGroup = {}
 
             function RadioGroup.new(parentContainer, options)
@@ -12061,14 +11669,14 @@ do
             return RadioGroup
         end
 
-        function __DARKLUA_BUNDLE_MODULES.r()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.r
+        function __DARKLUA_BUNDLE_MODULES.q()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.q
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.r = v
+                __DARKLUA_BUNDLE_MODULES.cache.q = v
             end
 
             return v.c
@@ -12079,7 +11687,7 @@ do
             local UserInputService = game:GetService('UserInputService')
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local Slider = {}
 
             function Slider.new(parentContainer, options)
@@ -12469,14 +12077,14 @@ do
             return Slider
         end
 
-        function __DARKLUA_BUNDLE_MODULES.s()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.s
+        function __DARKLUA_BUNDLE_MODULES.r()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.r
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.s = v
+                __DARKLUA_BUNDLE_MODULES.cache.r = v
             end
 
             return v.c
@@ -12874,14 +12482,14 @@ do
             return LoadingSpinner
         end
 
-        function __DARKLUA_BUNDLE_MODULES.t()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.t
+        function __DARKLUA_BUNDLE_MODULES.s()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.s
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.t = v
+                __DARKLUA_BUNDLE_MODULES.cache.s = v
             end
 
             return v.c
@@ -12891,8 +12499,8 @@ do
         local function __modImpl()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
-            local LoadingSpinner = __DARKLUA_BUNDLE_MODULES.t()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
+            local LoadingSpinner = __DARKLUA_BUNDLE_MODULES.s()
             local Spinner = {}
 
             local function create7CssButtonArrow(parentBtn, direction, zIndex)
@@ -13220,14 +12828,14 @@ do
             return Spinner
         end
 
-        function __DARKLUA_BUNDLE_MODULES.u()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.u
+        function __DARKLUA_BUNDLE_MODULES.t()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.t
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.u = v
+                __DARKLUA_BUNDLE_MODULES.cache.t = v
             end
 
             return v.c
@@ -13238,7 +12846,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local ComboBox = {}
 
             function ComboBox.new(parentContainer, options)
@@ -13679,14 +13287,14 @@ do
             return ComboBox
         end
 
-        function __DARKLUA_BUNDLE_MODULES.v()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.v
+        function __DARKLUA_BUNDLE_MODULES.u()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.u
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.v = v
+                __DARKLUA_BUNDLE_MODULES.cache.u = v
             end
 
             return v.c
@@ -13697,7 +13305,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Scrollbar = __DARKLUA_BUNDLE_MODULES.g()
+            local Scrollbar = __DARKLUA_BUNDLE_MODULES.f()
             local Listbox = {}
 
             function Listbox.new(parentContainer, options)
@@ -14146,14 +13754,14 @@ do
             return Listbox
         end
 
-        function __DARKLUA_BUNDLE_MODULES.w()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.w
+        function __DARKLUA_BUNDLE_MODULES.v()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.v
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.w = v
+                __DARKLUA_BUNDLE_MODULES.cache.v = v
             end
 
             return v.c
@@ -14164,7 +13772,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Scrollbar = __DARKLUA_BUNDLE_MODULES.g()
+            local Scrollbar = __DARKLUA_BUNDLE_MODULES.f()
             local TreeView = {}
 
             function TreeView.new(parentContainer, options)
@@ -14413,14 +14021,14 @@ do
             return TreeView
         end
 
-        function __DARKLUA_BUNDLE_MODULES.x()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.x
+        function __DARKLUA_BUNDLE_MODULES.w()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.w
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.x = v
+                __DARKLUA_BUNDLE_MODULES.cache.w = v
             end
 
             return v.c
@@ -14430,7 +14038,7 @@ do
         local function __modImpl()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local TextBox = {}
 
             function TextBox.new(parentContainer, options)
@@ -14685,14 +14293,14 @@ do
             return TextBox
         end
 
-        function __DARKLUA_BUNDLE_MODULES.y()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.y
+        function __DARKLUA_BUNDLE_MODULES.x()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.x
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.y = v
+                __DARKLUA_BUNDLE_MODULES.cache.x = v
             end
 
             return v.c
@@ -14703,7 +14311,7 @@ do
             local UserInputService = game:GetService('UserInputService')
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local Keybind = {}
 
             local function formatKeyName(keyCode)
@@ -14905,14 +14513,14 @@ do
             return Keybind
         end
 
-        function __DARKLUA_BUNDLE_MODULES.z()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.z
+        function __DARKLUA_BUNDLE_MODULES.y()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.y
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.z = v
+                __DARKLUA_BUNDLE_MODULES.cache.y = v
             end
 
             return v.c
@@ -15120,14 +14728,14 @@ do
             return ProgressBar
         end
 
-        function __DARKLUA_BUNDLE_MODULES.A()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.A
+        function __DARKLUA_BUNDLE_MODULES.z()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.z
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.A = v
+                __DARKLUA_BUNDLE_MODULES.cache.z = v
             end
 
             return v.c
@@ -15137,9 +14745,9 @@ do
         local function __modImpl()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local DWM = __DARKLUA_BUNDLE_MODULES.e()
-            local Slider = __DARKLUA_BUNDLE_MODULES.s()
-            local ColorDialog = __DARKLUA_BUNDLE_MODULES.l()
+            local DWM = __DARKLUA_BUNDLE_MODULES.d()
+            local Slider = __DARKLUA_BUNDLE_MODULES.r()
+            local ColorDialog = __DARKLUA_BUNDLE_MODULES.k()
             local ColorPicker = {}
 
             function ColorPicker.newInline(parentContainer, options)
@@ -15608,14 +15216,14 @@ do
             return ColorPicker
         end
 
-        function __DARKLUA_BUNDLE_MODULES.B()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.B
+        function __DARKLUA_BUNDLE_MODULES.A()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.A
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.B = v
+                __DARKLUA_BUNDLE_MODULES.cache.A = v
             end
 
             return v.c
@@ -15627,7 +15235,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Scrollbar = __DARKLUA_BUNDLE_MODULES.g()
+            local Scrollbar = __DARKLUA_BUNDLE_MODULES.f()
             local ListView = {}
 
             function ListView.new(parentContainer, options)
@@ -15972,14 +15580,14 @@ do
             return ListView
         end
 
-        function __DARKLUA_BUNDLE_MODULES.C()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.C
+        function __DARKLUA_BUNDLE_MODULES.B()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.B
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.C = v
+                __DARKLUA_BUNDLE_MODULES.cache.B = v
             end
 
             return v.c
@@ -16192,14 +15800,14 @@ do
             return Balloon
         end
 
-        function __DARKLUA_BUNDLE_MODULES.D()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.D
+        function __DARKLUA_BUNDLE_MODULES.C()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.C
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.D = v
+                __DARKLUA_BUNDLE_MODULES.cache.C = v
             end
 
             return v.c
@@ -16369,14 +15977,14 @@ do
             return StatusBar
         end
 
-        function __DARKLUA_BUNDLE_MODULES.E()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.E
+        function __DARKLUA_BUNDLE_MODULES.D()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.D
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.E = v
+                __DARKLUA_BUNDLE_MODULES.cache.D = v
             end
 
             return v.c
@@ -16387,8 +15995,8 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
-            local MenuBar = __DARKLUA_BUNDLE_MODULES.h()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
+            local MenuBar = __DARKLUA_BUNDLE_MODULES.g()
             local Toolbar = {}
 
             function Toolbar.new(parentContainer, options)
@@ -16657,14 +16265,14 @@ do
             return Toolbar
         end
 
-        function __DARKLUA_BUNDLE_MODULES.F()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.F
+        function __DARKLUA_BUNDLE_MODULES.E()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.E
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.F = v
+                __DARKLUA_BUNDLE_MODULES.cache.E = v
             end
 
             return v.c
@@ -16675,7 +16283,7 @@ do
             local Assets = __DARKLUA_BUNDLE_MODULES.a()
             local Theme = __DARKLUA_BUNDLE_MODULES.b()
             local Utility = __DARKLUA_BUNDLE_MODULES.c()
-            local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
+            local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
             local SysLink = {}
 
             function SysLink.new(parentContainer, options)
@@ -16972,14 +16580,14 @@ do
             return SysLink
         end
 
-        function __DARKLUA_BUNDLE_MODULES.G()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.G
+        function __DARKLUA_BUNDLE_MODULES.F()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.F
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.G = v
+                __DARKLUA_BUNDLE_MODULES.cache.F = v
             end
 
             return v.c
@@ -17404,14 +17012,14 @@ do
             return DatePicker
         end
 
-        function __DARKLUA_BUNDLE_MODULES.H()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.H
+        function __DARKLUA_BUNDLE_MODULES.G()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.G
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.H = v
+                __DARKLUA_BUNDLE_MODULES.cache.G = v
             end
 
             return v.c
@@ -17719,14 +17327,14 @@ do
             return TabControl
         end
 
-        function __DARKLUA_BUNDLE_MODULES.I()
-            local v = __DARKLUA_BUNDLE_MODULES.cache.I
+        function __DARKLUA_BUNDLE_MODULES.H()
+            local v = __DARKLUA_BUNDLE_MODULES.cache.H
 
             if not v then
                 v = {
                     c = __modImpl(),
                 }
-                __DARKLUA_BUNDLE_MODULES.cache.I = v
+                __DARKLUA_BUNDLE_MODULES.cache.H = v
             end
 
             return v.c
@@ -17737,38 +17345,37 @@ end
 local Assets = __DARKLUA_BUNDLE_MODULES.a()
 local Theme = __DARKLUA_BUNDLE_MODULES.b()
 local Utility = __DARKLUA_BUNDLE_MODULES.c()
-local DWM = __DARKLUA_BUNDLE_MODULES.e()
-local BlurController = __DARKLUA_BUNDLE_MODULES.d()
-local AeroWindow = __DARKLUA_BUNDLE_MODULES.f()
-local ExplorerLayout = __DARKLUA_BUNDLE_MODULES.i()
-local DialogLayout = __DARKLUA_BUNDLE_MODULES.j()
-local SubDialog = __DARKLUA_BUNDLE_MODULES.k()
-local ColorDialog = __DARKLUA_BUNDLE_MODULES.l()
-local GroupBox = __DARKLUA_BUNDLE_MODULES.m()
-local Button = __DARKLUA_BUNDLE_MODULES.o()
-local CommandLink = __DARKLUA_BUNDLE_MODULES.p()
-local Checkbox = __DARKLUA_BUNDLE_MODULES.q()
-local RadioGroup = __DARKLUA_BUNDLE_MODULES.r()
-local Slider = __DARKLUA_BUNDLE_MODULES.s()
-local Spinner = __DARKLUA_BUNDLE_MODULES.u()
-local ComboBox = __DARKLUA_BUNDLE_MODULES.v()
-local Listbox = __DARKLUA_BUNDLE_MODULES.w()
-local TreeView = __DARKLUA_BUNDLE_MODULES.x()
-local TextBox = __DARKLUA_BUNDLE_MODULES.y()
-local Keybind = __DARKLUA_BUNDLE_MODULES.z()
-local ProgressBar = __DARKLUA_BUNDLE_MODULES.A()
-local ColorPicker = __DARKLUA_BUNDLE_MODULES.B()
-local ListView = __DARKLUA_BUNDLE_MODULES.C()
-local Balloon = __DARKLUA_BUNDLE_MODULES.D()
-local MenuBar = __DARKLUA_BUNDLE_MODULES.h()
-local Scrollbar = __DARKLUA_BUNDLE_MODULES.g()
-local Tooltip = __DARKLUA_BUNDLE_MODULES.n()
-local StatusBar = __DARKLUA_BUNDLE_MODULES.E()
-local Toolbar = __DARKLUA_BUNDLE_MODULES.F()
-local SysLink = __DARKLUA_BUNDLE_MODULES.G()
-local DatePicker = __DARKLUA_BUNDLE_MODULES.H()
-local TabControl = __DARKLUA_BUNDLE_MODULES.I()
-local LoadingSpinner = __DARKLUA_BUNDLE_MODULES.t()
+local DWM = __DARKLUA_BUNDLE_MODULES.d()
+local AeroWindow = __DARKLUA_BUNDLE_MODULES.e()
+local ExplorerLayout = __DARKLUA_BUNDLE_MODULES.h()
+local DialogLayout = __DARKLUA_BUNDLE_MODULES.i()
+local SubDialog = __DARKLUA_BUNDLE_MODULES.j()
+local ColorDialog = __DARKLUA_BUNDLE_MODULES.k()
+local GroupBox = __DARKLUA_BUNDLE_MODULES.l()
+local Button = __DARKLUA_BUNDLE_MODULES.n()
+local CommandLink = __DARKLUA_BUNDLE_MODULES.o()
+local Checkbox = __DARKLUA_BUNDLE_MODULES.p()
+local RadioGroup = __DARKLUA_BUNDLE_MODULES.q()
+local Slider = __DARKLUA_BUNDLE_MODULES.r()
+local Spinner = __DARKLUA_BUNDLE_MODULES.t()
+local ComboBox = __DARKLUA_BUNDLE_MODULES.u()
+local Listbox = __DARKLUA_BUNDLE_MODULES.v()
+local TreeView = __DARKLUA_BUNDLE_MODULES.w()
+local TextBox = __DARKLUA_BUNDLE_MODULES.x()
+local Keybind = __DARKLUA_BUNDLE_MODULES.y()
+local ProgressBar = __DARKLUA_BUNDLE_MODULES.z()
+local ColorPicker = __DARKLUA_BUNDLE_MODULES.A()
+local ListView = __DARKLUA_BUNDLE_MODULES.B()
+local Balloon = __DARKLUA_BUNDLE_MODULES.C()
+local MenuBar = __DARKLUA_BUNDLE_MODULES.g()
+local Scrollbar = __DARKLUA_BUNDLE_MODULES.f()
+local Tooltip = __DARKLUA_BUNDLE_MODULES.m()
+local StatusBar = __DARKLUA_BUNDLE_MODULES.D()
+local Toolbar = __DARKLUA_BUNDLE_MODULES.E()
+local SysLink = __DARKLUA_BUNDLE_MODULES.F()
+local DatePicker = __DARKLUA_BUNDLE_MODULES.G()
+local TabControl = __DARKLUA_BUNDLE_MODULES.H()
+local LoadingSpinner = __DARKLUA_BUNDLE_MODULES.s()
 local Win7UI = {
     Version = '1.0.0-Aero7',
     Flags = {},
@@ -17779,7 +17386,6 @@ local Win7UI = {
     Utility = Utility,
     DWM = DWM,
     ColorDialog = ColorDialog,
-    BlurController = BlurController,
 }
 
 local function bindFlag(options, controlObj)
@@ -18314,12 +17920,6 @@ function Win7UI:SetIcons(iconTable)
 end
 function Win7UI:SetGlassColor(colorOrPresetName, transparency, glowColor)
     DWM:SetGlassColor(colorOrPresetName, transparency, glowColor)
-end
-function Win7UI:SetBlurIntensity(intensity)
-    BlurController.SetIntensity(intensity)
-end
-function Win7UI:SetBlurEnabled(enabled)
-    BlurController.SetEnabled(enabled)
 end
 function Win7UI:LoadSegoeFont(options)
     return Theme.LoadSegoeFont(options)

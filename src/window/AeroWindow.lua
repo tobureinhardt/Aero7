@@ -8,7 +8,6 @@ local Assets = require("core/Assets")
 local Theme = require("core/Theme")
 local Utility = require("core/Utility")
 local DWM = require("core/DWM")
-local BlurController = require("core/BlurController")
 
 local AeroWindow = {}
 AeroWindow.__index = AeroWindow
@@ -189,26 +188,6 @@ function AeroWindow.new(options)
 
 	-- DWM glass layers (Tint, Top Gloss, 104° Specular Sheen, Frost Rim, Multi-layer DropShadow)
 	self.GlassLayers = DWM.BuildAeroGlassLayers(windowFrame)
-
-	-- Real glass blur controller (DepthOfField near-plane refraction standard)
-	self.BlurEnabled = (options.Blur ~= false)
-	self.BlurIntensity = options.BlurIntensity or 0.25
-	self.BlurSize = options.BlurSize
-
-	if self.BlurEnabled then
-		local ok, blurInstance = pcall(function()
-			return BlurController.new(windowFrame, options.BlurShape or "Rectangle", {
-				BlurSize = self.BlurSize,
-				Intensity = self.BlurIntensity,
-			})
-		end)
-		if ok and blurInstance then
-			self.BlurInstance = blurInstance
-			if not self.IsVisible then
-				blurInstance:SetVisible(false)
-			end
-		end
-	end
 
 	-- 2. Title Bar (Height: 30px)
 	local titleBar = Utility.Create("Frame", {
@@ -1041,9 +1020,6 @@ function AeroWindow:Minimize()
 		return
 	end
 	self.IsMinimized = true
-	if self.BlurInstance then
-		self.BlurInstance:SetVisible(false)
-	end
 	if not self.IsMaximized then
 		self.SavedBounds = {
 			Position = self.WindowFrame.Position,
@@ -1085,9 +1061,6 @@ function AeroWindow:Restore()
 		return
 	end
 	self.IsMinimized = false
-	if self.BlurInstance then
-		self.BlurInstance:SetVisible(true)
-	end
 	self.MinimizedStub.Visible = false
 	DWM.NextAnimToken(self.WindowFrame)
 	self.WindowFrame.Visible = true
@@ -1164,9 +1137,6 @@ function AeroWindow:ToggleVisibility(state)
 		nextState = not self.IsVisible
 	end
 	self.IsVisible = nextState
-	if self.BlurInstance then
-		self.BlurInstance:SetVisible(nextState)
-	end
 
 	if nextState then
 		if self.IsMinimized then
@@ -1193,9 +1163,6 @@ end
 
 function AeroWindow:Close()
 	self.IsVisible = false
-	if self.BlurInstance then
-		self.BlurInstance:SetVisible(false)
-	end
 	self.MinimizedStub.Visible = false
 	DWM.AnimateClose(self.WindowFrame, self.WindowScale, function()
 		self.OnClosed:Fire()
@@ -1203,10 +1170,6 @@ function AeroWindow:Close()
 end
 
 function AeroWindow:Destroy()
-	if self.BlurInstance then
-		self.BlurInstance:Destroy()
-		self.BlurInstance = nil
-	end
 	if self._KeybindConn then
 		self._KeybindConn:Disconnect()
 		self._KeybindConn = nil
