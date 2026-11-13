@@ -85,6 +85,9 @@ local Window = Aero7:CreateWindow({
 | `StatusText` | string | `""` | Initial status bar text displayed at the bottom of the window. |
 | `HierarchyIcon` | string | `"Explorer"` | Icon displayed at the root of the Explorer address bar. |
 | `DefaultTabIcon`| string | `"Folder"` | Fallback icon applied to tabs that do not specify an explicit icon. |
+| `OnRefresh` | function | `nil` | *(Explorer)* `function(tab, window)` called when the address bar Refresh button is pressed. A per-tab `OnRefresh` (in `CreateTab` options) takes priority. |
+| `OnStop` | function | `nil` | *(Explorer)* Called when Stop cancels a running refresh. |
+| `OnNavigate` | function | `nil` | *(Explorer)* `function(tab, window)` called whenever the active tab changes (tab click, Back/Forward, breadcrumb, typed path). |
 
 ### Window Methods
 
@@ -93,6 +96,21 @@ Registers a new navigation page or tab strip page within the window. Returns a `
 
 #### `Window:SelectTab(tabObject)`
 Switches the active display to the specified tab, updating history stacks and navigation controls.
+
+#### Address bar (Explorer layout)
+The address bar is fully drawn in code (no asset ids) and is functional:
+
+- **Breadcrumbs** size themselves to their text. When the path no longer fits, leading cells collapse into `...` (click it to expand the whole path). The arrow after a crumb opens a list of its children (all tabs for the root, the tabs of a category for a category crumb).
+- **Back / Forward chevron** opens the recent-pages list (newest first) and jumps straight to the chosen entry.
+- **Edit path**: click the empty part of the address bar to type a path (`Control Panel\Appearance\Display`); Enter or the blue Go arrow navigates, Esc/click away cancels. Unknown paths flash the border red.
+- **Refresh / Stop**: Refresh clears the search filter, rebuilds the path, shows green progress and fires `OnRefresh`; while running the button turns into a red Stop.
+- **Dropdown (▾)** lists recent locations as full paths.
+
+#### `Window:Refresh()` / `Window:StopLoading()`
+Same as pressing Refresh / Stop in the address bar.
+
+#### `Window:SetOnRefresh(fn)` / `Window:SetOnStop(fn)` / `Window:SetOnNavigate(fn)`
+Set the callbacks after the window is created.
 
 #### `Window:AddCommandBarButton(text, callback, icon)`
 *(Explorer layout only)* Adds an action button to the command bar beneath the address bar.

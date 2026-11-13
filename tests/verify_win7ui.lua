@@ -381,8 +381,25 @@ local function check(cond, msg)
 	passCount = passCount + 1
 end
 
+local function getDistPath(filename)
+	local candidates = {
+		"dist/" .. filename,
+		"/root/Aero7/dist/" .. filename,
+		"/storage/emulated/0/Aero7/dist/" .. filename,
+		"/root/Win7UI/dist/" .. filename,
+	}
+	for _, p in ipairs(candidates) do
+		local f = io.open(p, "rb")
+		if f then
+			f:close()
+			return p
+		end
+	end
+	return "dist/" .. filename
+end
+
 print("=== [1/6] Loading bundled dist/Win7UI.lua ===")
-local bundleChunk, loadErr = loadfile("/root/Win7UI/dist/Win7UI.lua")
+local bundleChunk, loadErr = loadfile(getDistPath("Win7UI.lua"))
 check(bundleChunk ~= nil, "Failed to compile dist/Win7UI.lua: " .. tostring(loadErr))
 
 _G.__WIN7UI_LOADER = bundleChunk
@@ -398,7 +415,7 @@ check(math.abs(btnNormalKps[2].Time - 0.495) < 0.01 and math.abs(btnNormalKps[3]
 check(#Win7UI.Theme.GlassPresets == 16, "Exactly 16 Windows 7 Personalization Glass Presets present")
 
 print("=== [3/6] Executing dist/Example.lua Showcase ===")
-local exampleChunk, exErr = loadfile("/root/Win7UI/dist/Example.lua")
+local exampleChunk, exErr = loadfile(getDistPath("Example.lua"))
 check(exampleChunk ~= nil, "Failed to compile dist/Example.lua: " .. tostring(exErr))
 local demo = exampleChunk()
 check(demo and demo.MainWindow and demo.PropertySheetWindow, "Both Explorer and Dialog windows created")
@@ -472,6 +489,24 @@ mainWin.Interior.BackOrb.Button.MouseButton1Click:Fire()
 check(mainWin.Interior.ActiveTab == mainWin.Tabs[1], "Back orb navigated back to Tab 1")
 check(mainWin.Interior.ForwardOrb.Enabled == true, "Forward orb button enabled after going back")
 
+-- Orb sprite states (Default 0 | Hover 100 | Pressed 200 | Disabled 300 on the HD sheet)
+local fwdBtn = mainWin.Interior.ForwardOrb.Button
+local backBtn = mainWin.Interior.BackOrb.Button
+check(backBtn.ImageRectOffset.X == 300, "Disabled Back orb shows the Disabled sprite cell (x = 300)")
+check(fwdBtn.ImageRectOffset.X == 0, "Enabled Forward orb shows the Default sprite cell (x = 0)")
+fwdBtn.MouseEnter:Fire()
+check(fwdBtn.ImageRectOffset.X == 100, "Hovered Forward orb shows the Hover sprite cell (x = 100)")
+fwdBtn.MouseButton1Down:Fire()
+check(fwdBtn.ImageRectOffset.X == 200, "Pressed Forward orb shows the Pressed sprite cell (x = 200)")
+fwdBtn.MouseButton1Up:Fire()
+check(fwdBtn.ImageRectOffset.X == 100, "Released Forward orb returns to the Hover sprite cell while the cursor is over it")
+fwdBtn.MouseLeave:Fire()
+check(fwdBtn.ImageRectOffset.X == 0, "Forward orb returns to the Default sprite cell when the cursor leaves")
+backBtn.MouseEnter:Fire()
+backBtn.MouseButton1Down:Fire()
+check(backBtn.ImageRectOffset.X == 300, "Disabled Back orb ignores hover/press and stays on the Disabled sprite cell")
+backBtn.MouseLeave:Fire()
+
 -- Verify Instant Search filtering
 mainWin.Interior.SearchBox.Text = "Targeting"
 check(mainWin.Interior.ItemCountLabel.Text:find("match") ~= nil, "Instant Search filtered controls and updated status count")
@@ -496,6 +531,24 @@ local dlg = mainWin:ShowDialog({
 })
 check(dlg and dlg.DialogFrame ~= nil, "SubDialog TaskDialog created")
 check(dlg.DialogFrame.DialogTitleBar.DialogCloseButton:FindFirstChild("Glyph_Close") ~= nil, "SubDialog Close button renders crisp vector Glyph_Close (X) instead of missing font char")
+check(dlg.Overlay.BackgroundTransparency == 1, "SubDialog does not dim the screen behind it")
+do
+	-- Dragging the title bar moves the dialog (position only) and keeps it inside the screen
+	dlg.Overlay.AbsoluteSize = Vector2.new(1920, 1080)
+	dlg.DialogFrame.AbsoluteSize = Vector2.new(390, 186)
+	local dialogBar = dlg.DialogFrame.DialogTitleBar
+	local startPos = dlg.DialogFrame.Position
+	local startSize = dlg.DialogFrame.Size
+	dialogBar.InputBegan:Fire({ UserInputType = Enum.UserInputType.MouseButton1, Position = Vector2.new(200, 200) })
+	services.UserInputService.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(230, 215) })
+	check(dlg.DialogFrame.Position.X.Offset == startPos.X.Offset + 30 and dlg.DialogFrame.Position.Y.Offset == startPos.Y.Offset + 15, "SubDialog moves with its title bar drag")
+	services.UserInputService.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(5200, 5200) })
+	check(dlg.DialogFrame.Position.X.Offset == (1920 - 390) / 2 and dlg.DialogFrame.Position.Y.Offset == (1080 - 186) / 2, "SubDialog drag is clamped to the screen")
+	services.UserInputService.InputEnded:Fire({ UserInputType = Enum.UserInputType.MouseButton1, Position = Vector2.new(5200, 5200) })
+	services.UserInputService.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(0, 0) })
+	check(dlg.DialogFrame.Position.X.Offset == (1920 - 390) / 2, "SubDialog stops following the mouse after the button is released")
+	check(dlg.DialogFrame.Size.X.Offset == startSize.X.Offset and dlg.DialogFrame.Size.Y.Offset == startSize.Y.Offset, "SubDialog size is unchanged by dragging")
+end
 dlg.Close(true, "OK")
 
 print("=== [6/7] Testing 686 Uploaded Frutiger Aero Icons & SetIcons() Live Binding ===")
@@ -558,16 +611,19 @@ local navBar = mainWin.Interior.Root.ExplorerNavigationBar
 check(navBar.BackgroundTransparency == 1 and mainWin.Interior.Root.BackgroundTransparency == 1, "ExplorerNavigationBar & ClientOuterFrame are transparent (DwmExtendFrameIntoClientArea - no opaque background under Back/Forward/Address/Search)")
 local bfHousing = navBar:FindFirstChild("BackForwardHousing")
 check(bfHousing ~= nil and bfHousing.BackgroundTransparency == 1, "BackForwardHousing has no full pill background (BackgroundTransparency=1)")
-check(bfHousing:FindFirstChild("ConcaveBridge3D") ~= nil and bfHousing:FindFirstChild("BackSocketBevel") ~= nil and bfHousing:FindFirstChild("ForwardSocketBevel") ~= nil, "3D ConcaveBridge3D and sunken SocketBevels connect the two orbs with depth")
-local bridgeRightEdge = bfHousing.ConcaveBridge3D.Position.X.Offset + bfHousing.ConcaveBridge3D.Size.X.Offset
-check(bfHousing.ConcaveBridge3D.BackgroundTransparency <= 0.45 and bridgeRightEdge < bfHousing.HistoryDropdownButton.Position.X.Offset, "ConcaveBridge3D has visible 3D sunken bevel depth and connects ONLY the 2 orbs (never extending to the 3rd button)")
+local navFrame = bfHousing:FindFirstChild("BackForwardFrame")
+check(navFrame ~= nil and navFrame.ClassName == "ImageLabel" and navFrame.ImageRectSize.X == 244 and navFrame.ImageRectSize.Y == 120 and navFrame.ImageRectOffset.X == 0 and navFrame.ImageRectOffset.Y == 208, "BackForwardFrame glass capsule sprite sits beneath both orbs (244x120 @4x cell cut from the HD sheet)")
+check(navFrame.Size.X.Offset == 61 and navFrame.Size.Y.Offset == 30 and bfHousing.Size.Y.Offset == 30, "BackForwardFrame is 61x30 logical px and the housing matches its height")
+check(bfHousing.ConcaveBridge3D.Visible == false, "UI-built ConcaveBridge3D fallback is hidden once the HD frame sprite is available")
+check(bfHousing.HistoryDropdownButton.Position.X.Offset >= navFrame.Size.X.Offset, "HistoryDropdownButton chevron sits just right of the frame (never overlapping the orbs)")
 check(navBar.InstantSearchBoxWrap.Size.X.Offset == 176 and navBar.InstantSearchBoxWrap.Position.X.Offset == -182, "InstantSearchBoxWrap restored to 176px width with 6px right margin (-182) so right border is never clipped")
-check(bfHousing:FindFirstChild("BackOrbBloomHalo") ~= nil and bfHousing:FindFirstChild("ForwardOrbBloomHalo") ~= nil, "Back/Forward Orb Bloom Halos exist")
+local backSprite, fwdSprite = mainWin.Interior.BackOrb.Button, mainWin.Interior.ForwardOrb.Button
+check(backSprite.ClassName == "ImageButton" and fwdSprite.ClassName == "ImageButton", "Back/Forward orbs are ImageButtons using the HD vector-rendered sprite sheet")
+check(backSprite.Size.X.Offset == 25 and backSprite.Size.Y.Offset == 26 and fwdSprite.Size.X.Offset == 25 and fwdSprite.Size.Y.Offset == 26, "Orbs are 25x26 logical px (SVG artwork size)")
+check(backSprite.ImageRectSize.X == 100 and backSprite.ImageRectSize.Y == 104 and backSprite.ImageRectOffset.Y == 0 and fwdSprite.ImageRectOffset.Y == 104, "Back uses sheet row 0, Forward uses sheet row 1 (100x104 cells)")
+check(backSprite.Position.X.Offset == 3 and fwdSprite.Position.X.Offset == 33, "Orbs centered in the frame lobes (centers x = 15.5 / 45.5)")
 check(bfHousing:FindFirstChild("HistoryDropdownButton") ~= nil, "HistoryDropdownButton chevron exists in BackForwardHousing")
 check(bfHousing.HistoryDropdownButton.Win7VectorChevron:FindFirstChild("ChevronArm_1") ~= nil and bfHousing.HistoryDropdownButton.Win7VectorChevron.ChevronArm_1.Rotation ~= 0, "Win7VectorChevron uses smooth rotated arms (no pixel staircase)")
-check(mainWin.Interior.BackOrb.Button:FindFirstChild("Win7VectorArrow") ~= nil, "BackOrb uses crisp geometric Win7VectorArrow instead of unicode text")
-check(mainWin.Interior.BackOrb.Button.Win7VectorArrow:FindFirstChild("HeadWing_1") ~= nil and mainWin.Interior.BackOrb.Button.Win7VectorArrow.HeadWing_1.Rotation ~= 0, "Win7VectorArrow head uses smooth anti-aliased rotated wings (no pixel staircase)")
-check(mainWin.Interior.ForwardOrb.Button:FindFirstChild("Win7VectorArrow") ~= nil, "ForwardOrb uses crisp geometric Win7VectorArrow instead of unicode text")
 
 -- 3. Verify mobile viewport clamping (~78%x80% small screen) and touch drag hitbox
 check(titleBar:FindFirstChild("TitleDragHitBox") ~= nil, "Dedicated TitleDragHitBox exists for Mobile touch dragging")
@@ -690,7 +746,7 @@ local ringHolder = spinnerInstance:FindFirstChild("SpinnerRingHolder")
 check(ringHolder ~= nil and ringHolder.Size.X.Offset == 20 and ringHolder.Size.Y.Offset == 20, "SpinnerRingHolder exists with exact 20x20px size per 7.css _spinner.scss")
 check(ringHolder:FindFirstChild("AeroTorusRing") ~= nil and ringHolder:FindFirstChild("SpinnerSpriteImage") ~= nil, "SpinnerRingHolder has AeroTorusRing and 18-frame SpinnerSpriteImage (no fake radial dots)")
 local spriteImg = ringHolder:FindFirstChild("SpinnerSpriteImage")
-check(spriteImg ~= nil and spriteImg.ImageRectSize.X == 80 and spriteImg.ImageRectSize.Y == 80, "SpinnerSpriteImage configured with 4x HD 80x80px frame resolution")
+check(spriteImg ~= nil and spriteImg.ImageRectSize.X == 160 and spriteImg.ImageRectSize.Y == 160, "SpinnerSpriteImage configured with 8x HD 160x160px frame resolution")
 
 print("=== [11/11] Testing Sidebar Selection Edge Padding, Corner Resize Anchoring (Mobile) & Window Fade ===")
 -- 1. Sidebar: item container has UIPadding so selection stroke is not clipped
@@ -709,6 +765,15 @@ local posBefore = wf.Position
 local sizeBefore = wf.Size
 local grip = wf:FindFirstChild("ResizeGrip_BottomRight")
 check(grip ~= nil, "ResizeGrip_BottomRight exists")
+do
+	local gripCount = 0
+	for _, child in ipairs(wf:GetChildren()) do
+		if child.Name:find("^ResizeGrip_") then
+			gripCount = gripCount + 1
+		end
+	end
+	check(gripCount == 1, "Only the bottom-right corner can resize a window (no edge/other-corner grips)")
+end
 grip.InputBegan:Fire({ UserInputType = Enum.UserInputType.Touch, Position = Vector2.new(300, 250) })
 services.UserInputService.InputChanged:Fire({ UserInputType = Enum.UserInputType.Touch, Position = Vector2.new(330, 270) })
 check(wf.Position.X.Offset == posBefore.X.Offset and wf.Position.Y.Offset == posBefore.Y.Offset, "BottomRight resize keeps window Position unchanged (no push to top edge)")
@@ -776,6 +841,7 @@ local dialogInstance = Win7UI:ShowColorDialog({
 })
 check(dialogInstance ~= nil, "Win7UI:ShowColorDialog creates dialog instance")
 check(dialogInstance.Overlay ~= nil and dialogInstance.Overlay.Name == "Win7ColorModalOverlay", "Modal overlay Win7ColorModalOverlay exists")
+check(dialogInstance.Overlay.BackgroundTransparency == 1, "ColorDialog does not dim the screen behind it")
 check(dialogInstance.DialogFrame ~= nil and dialogInstance.DialogFrame.Name == "Win7ChooseColorDialog", "DialogFrame Win7ChooseColorDialog exists")
 
 local colorClientBox = dialogInstance.DialogFrame:FindFirstChild("DialogClientBox")

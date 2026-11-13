@@ -129,12 +129,12 @@ function ColorDialog.Show(parentWindow, options)
 		end
 	end
 
-	-- Semi-transparent modal backdrop
+	-- Invisible modal layer: still blocks clicks behind the dialog, but does not dim the screen
 	local overlay = Utility.Create("TextButton", {
 		Name = "Win7ColorModalOverlay",
 		Parent = screenGui,
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.72,
+		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 0, 0, 0),
 		Size = UDim2.new(1, 0, 1, 0),
 		Text = "",

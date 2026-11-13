@@ -6,6 +6,8 @@ local Theme = require("core/Theme")
 local Utility = require("core/Utility")
 local DWM = require("core/DWM")
 
+local UserInputService = game:GetService("UserInputService")
+
 local SubDialog = {}
 
 function SubDialog.Show(parentWindow, options)
@@ -22,12 +24,12 @@ function SubDialog.Show(parentWindow, options)
 
 	local screenGui = (parentWindow and parentWindow.ScreenGui) or Utility.GetSafeGuiParent()
 
-	-- Semi-transparent modal backdrop blocking clicks
+	-- Invisible modal layer: still blocks clicks behind the dialog, but does not dim the screen
 	local overlay = Utility.Create("TextButton", {
 		Name = "Win7ModalOverlay",
 		Parent = screenGui,
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.72,
+		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 0, 0, 0),
 		Size = UDim2.new(1, 0, 1, 0),
 		Text = "",
@@ -132,6 +134,63 @@ function SubDialog.Show(parentWindow, options)
 		closeGlowCtrl:Fade(0, 0.20)
 	end)
 
+	-- Drag the dialog by its title bar (position only, kept inside the screen)
+	local stopDrag
+	do
+		local dragging = false
+		local dragStart, startPos
+		local moveConn, endConn
+
+		stopDrag = function()
+			dragging = false
+			if moveConn then
+				moveConn:Disconnect()
+				moveConn = nil
+			end
+			if endConn then
+				endConn:Disconnect()
+				endConn = nil
+			end
+		end
+
+		titleBar.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			stopDrag()
+			dragging = true
+			dragStart = input.Position
+			startPos = dialogFrame.Position
+
+			moveConn = UserInputService.InputChanged:Connect(function(changed)
+				if not dragging then
+					return
+				end
+				if changed.UserInputType ~= Enum.UserInputType.MouseMovement and changed.UserInputType ~= Enum.UserInputType.Touch then
+					return
+				end
+				local delta = changed.Position - dragStart
+				local x = startPos.X.Offset + delta.X
+				local y = startPos.Y.Offset + delta.Y
+				-- The frame is centred (scale 0.5), so its offset may range +-(screen - dialog) / 2
+				local area = overlay.AbsoluteSize
+				local dialogSize = dialogFrame.AbsoluteSize
+				if area.X > 0 and area.Y > 0 then
+					local limitX = math.max(0, (area.X - dialogSize.X) / 2)
+					local limitY = math.max(0, (area.Y - dialogSize.Y) / 2)
+					x = math.clamp(x, -limitX, limitX)
+					y = math.clamp(y, -limitY, limitY)
+				end
+				dialogFrame.Position = UDim2.new(startPos.X.Scale, x, startPos.Y.Scale, y)
+			end)
+			endConn = UserInputService.InputEnded:Connect(function(ended)
+				if ended.UserInputType == Enum.UserInputType.MouseButton1 or ended.UserInputType == Enum.UserInputType.Touch then
+					stopDrag()
+				end
+			end)
+		end)
+	end
+
 	-- TaskDialog client area (8px padding from glass frame)
 	local clientBox = Utility.Create("Frame", {
 		Name = "DialogClientBox",
@@ -235,6 +294,7 @@ function SubDialog.Show(parentWindow, options)
 			return
 		end
 		closed = true
+		stopDrag()
 		DWM.AnimateClose(dialogFrame, scale, function()
 			if overlay and overlay.Parent then
 				overlay:Destroy()

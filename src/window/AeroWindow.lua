@@ -1,5 +1,5 @@
 --!nonstrict
--- Aero7: window/AeroWindow - Standard Windows 7 Aero Glass window chrome, caption buttons, client area, snap, and resize handles.
+-- Aero7: window/AeroWindow - Standard Windows 7 Aero Glass window chrome, caption buttons, client area, snap, and bottom-right resize grip.
 
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
@@ -277,7 +277,7 @@ function AeroWindow.new(options)
 	-- 5. Minimized Aero Titlebar Stub (standalone floating stub)
 	self:_BuildMinimizedStub()
 
-	-- 6. Responsive screen fitting (Mobile & PC), drag handling, and 8-way resize
+	-- 6. Responsive screen fitting (Mobile & PC), drag handling, and bottom-right corner resize
 	self:_FitToViewport()
 	self:_SetupDragAndSnap()
 	self:_SetupResizeHandles()
@@ -824,16 +824,10 @@ function AeroWindow:_SetupDragAndSnap()
 	end)
 end
 
--- Configures 8-way resize handles with 16x16 corner hitboxes
+-- Resizing is only possible from the bottom-right corner (like the status bar grip dots)
 function AeroWindow:_SetupResizeHandles()
 	local handleDefs = {
-		{ Name = "Right",       Pos = UDim2.new(1, -6, 0, 12), Size = UDim2.new(0, 8, 1, -28), DX = 0, DY = 0, DW = 1, DH = 0 },
-		{ Name = "Bottom",      Pos = UDim2.new(0, 12, 1, -6), Size = UDim2.new(1, -28, 0, 8), DX = 0, DY = 0, DW = 0, DH = 1 },
-		{ Name = "Left",        Pos = UDim2.new(0, -2, 0, 12), Size = UDim2.new(0, 8, 1, -28), DX = 1, DY = 0, DW = -1, DH = 0 },
-		{ Name = "Top",         Pos = UDim2.new(0, 12, 0, -2), Size = UDim2.new(1, -125, 0, 6), DX = 0, DY = 1, DW = 0, DH = -1 },
-		{ Name = "BottomRight", Pos = UDim2.new(1, -16, 1, -16), Size = UDim2.new(0, 18, 0, 18), DX = 0, DY = 0, DW = 1, DH = 1 },
-		{ Name = "BottomLeft",  Pos = UDim2.new(0, -2, 1, -16), Size = UDim2.new(0, 16, 0, 16), DX = 1, DY = 0, DW = -1, DH = 1 },
-		{ Name = "TopLeft",     Pos = UDim2.new(0, -2, 0, -2), Size = UDim2.new(0, 14, 0, 14), DX = 1, DY = 1, DW = -1, DH = -1 },
+		{ Name = "BottomRight", Pos = UDim2.new(1, -18, 1, -18), Size = UDim2.new(0, 20, 0, 20), DX = 0, DY = 0, DW = 1, DH = 1 },
 	}
 
 	local activeHandle = nil
